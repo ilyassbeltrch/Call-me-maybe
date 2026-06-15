@@ -1,0 +1,14 @@
+
+
+
+Phase1 :
+
+1 - what is llm / tokenization
+2 - what is model
+3 - what is function calling 
+4 - how to tranclating natural language request into a precise function 
+    calls with typed arguments
+5 - what is agents 
+6 - what is constrained decoding
+7 - how Python's uv package manager works uv sync, uv run
+8 - and how JSON schema validation works with pydantic

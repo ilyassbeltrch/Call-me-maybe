@@ -1,0 +1,63 @@
+
+
+
+
+ {v : k for k, v in my_dict.items()}
+
+
+this is a dictionary comprehension that reverses the keys
+and values of a dictionary
+
+
+how it works :
+
+Suppose :
+
+my_dict = {
+    "apple" : 1,
+    "banana" : 2,
+    "orange" : 3
+}  
+
+
+my_dict.items() produces :
+
+("apple", 1)
+("banana", 2)
+("orange", 3)
+
+The comprehension:
+
+{v: k for k, v in my_dict.items()}
+
+takes each (key, value) pair and creates a new pair (value, key).
+
+Result:
+
+{
+    1: "apple",
+    2: "banana",
+    3: "orange"
+}
+
+Important caveat
+
+If the original dictionary contains duplicate values, 
+some keys will be lost because dictionary keys must be unique.
+
+
+my_dict = {
+    "a" : 1,
+    "b" : 1,
+    "c" : 2
+}
+
+reversed_dict = {v : k for k, v in my_dict.items()}
+print(reversed_dict)
+
+Output:
+
+{1: 'b', 2: 'c'}
+
+so this expression is commonly used to invert a dictionary, provided that the original 
+values are unique 
