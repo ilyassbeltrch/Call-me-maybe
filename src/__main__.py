@@ -34,7 +34,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        with open(args.functions_definition, "r") as f:
+        with open(args .functions_definition,"r") as f:
             functions_def = json.load(f)
     except FileNotFoundError:
         print(f"Error: Functions definition file not found: {args.functions_definition}")

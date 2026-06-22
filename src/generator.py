@@ -66,7 +66,7 @@ if __name__ == "__main__":
 
     model = Small_LLM_Model()
 
-    
+     
     prompt = "What is the sum of 2 and 3?"
     prompt_ids: list[int] = model.encode(prompt).tolist()[0]
     print("Prompt ids:", prompt_ids)

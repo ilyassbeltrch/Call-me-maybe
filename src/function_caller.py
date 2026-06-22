@@ -1,176 +1,125 @@
-import json
-import re
-from typing import Any, Optional
+# src/function_caller.py
+import numpy as np
+from typing import Any
 from llm_sdk import Small_LLM_Model
-from src.vocab import load_vocab, get_token_id
-from src.schema_builder import SchemaBuilder
-from src.constrained_generator import ConstrainedGenerator
+from src.vocab import load_vocab
+from src.state_machine import JSONStateMachine, State
 
 
 class FunctionCaller:
-    def __init__(self, functions_definition: list[dict[str, Any]]):
+    """Picks a function and arguments for a prompt using ONLY constrained
+    decoding — the LLM picks everything, we only mask invalid tokens."""
+
+    def __init__(self, functions_definition: list[dict[str, Any]]) -> None:
         self.functions_def = functions_definition
         self.model = Small_LLM_Model()
-        
+
         tokenizer_path = self.model.get_path_to_tokenizer_file()
-        self.id_to_token = load_vocab(tokenizer_path)
-        
-        self.schema_builder = SchemaBuilder(functions_definition)
-        self.generator = ConstrainedGenerator(self.model, self.id_to_token)
+        self.id_to_str = load_vocab(tokenizer_path)
+
+        self.function_names = [f["name"] for f in functions_definition]
 
     def call(self, prompt: str) -> dict[str, Any]:
-        system_msg = self._build_system_message()
-        
-        full_prompt = f"{system_msg}\n\nUser: {prompt}\n\nRespond with JSON:\n"
-        
-        schema = self.schema_builder.get_output_schema()
-        
-        generated_tokens = self.generator.generate_with_constraints(
-            full_prompt, schema
-        )
-        
-        result_text = self.model.decode(generated_tokens)
-        result_json = self._parse_function_call(result_text, prompt)
-        
-        return result_json
+       
+        full_prompt = self._build_prompt(prompt)
+        prompt_ids: list[int] = self.model.encode(full_prompt).tolist()[0]
 
-    def _build_system_message(self) -> str:
-        msg = "You are a function calling assistant. You must choose the best function to call based on the user's request.\n\n"
-        msg += "Available functions:\n"
         
-        for func in self.functions_def:
-            msg += f"\n- {func['name']}: {func['description']}\n"
-            msg += f"  Parameters: {json.dumps(func['parameters'])}\n"
-        
-        msg += "\nRespond with a JSON object with 'name' and 'parameters' keys."
-        
-        return msg
+        chosen_name = self._generate_function_name(prompt_ids)
 
-    def _parse_function_call(self, text: str, original_prompt: str) -> dict[str, Any]:
-        try:
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            
-            if start == -1 or end == 0:
-                raise ValueError("No JSON object found in generated text")
-            
-            json_str = text[start:end]
-            parsed = json.loads(json_str)
-        except (json.JSONDecodeError, ValueError) as e:
-            parsed = self._reconstruct_function_call(text, original_prompt)
-
-        if "name" not in parsed:
-            parsed["name"] = self._infer_function_name(original_prompt)
-        
-        if "parameters" not in parsed:
-            parsed["parameters"] = {}
-        
-        result = {
-            "prompt": original_prompt,
-            "name": str(parsed.get("name", "")),
-            "parameters": self._coerce_parameters(
-                parsed.get("parameters", {}), parsed.get("name", "")
-            ),
+        func_def = next(f for f in self.functions_def if f["name"] == chosen_name)
+        param_names = list(func_def["parameters"].keys())
+        param_types = {
+            k: v.get("type", "string") for k, v in func_def["parameters"].items()
         }
 
-        return result
+        
+        sm = JSONStateMachine(
+            id_to_str=self.id_to_str,
+            function_names=[chosen_name],  
+            param_names=param_names,
+            param_types=param_types,
+        )
 
-    def _infer_function_name(self, prompt: str) -> str:
-        prompt_lower = prompt.lower()
-        
-        if "sum" in prompt_lower or "add" in prompt_lower or "plus" in prompt_lower:
-            return "fn_add_numbers"
-        elif "greet" in prompt_lower or "hello" in prompt_lower:
-            return "fn_greet"
-        elif "reverse" in prompt_lower:
-            return "fn_reverse_string"
-        elif "square root" in prompt_lower or "sqrt" in prompt_lower:
-            return "fn_get_square_root"
-        elif "replace" in prompt_lower or "substitute" in prompt_lower:
-            return "fn_substitute_string_with_regex"
-        
-        return self.functions_def[0]["name"]
+        generated_ids = self._run_state_machine(prompt_ids, sm)
+        json_text = self.model.decode(generated_ids)
 
-    def _reconstruct_function_call(self, text: str, prompt: str) -> dict[str, Any]:
-        result = {}
-        
-        for func in self.functions_def:
-            if func["name"] in text:
-                result["name"] = func["name"]
+        import json as json_lib
+        parsed = json_lib.loads(json_text)
+
+        return {
+            "prompt": prompt,
+            "name": parsed["name"],
+            "parameters": parsed["parameters"],
+        }
+
+    def _build_prompt(self, user_prompt: str) -> str:
+        lines = ["Available functions:"]
+        for f in self.functions_def:
+            lines.append(f"- {f['name']}: {f['description']}")
+        lines.append(f"\nUser request: {user_prompt}")
+        lines.append("Function to call:")
+        return "\n".join(lines)
+
+    def _generate_function_name(self, prompt_ids: list[int]) -> str:
+        """Run a tiny state machine that ONLY picks the function name,
+        with no surrounding JSON — just to decide which function fits."""
+        current_ids = prompt_ids.copy()
+        built = ""
+
+        while built not in self.function_names:
+            logits = self.model.get_logits_from_input_ids(current_ids)
+            valid_ids = self._tokens_continuing_any(self.function_names, built)
+            if not valid_ids:
                 break
-        
-        if "name" not in result:
-            result["name"] = self._infer_function_name(prompt)
-        
-        result["parameters"] = self._extract_parameters_from_text(text, result["name"])
-        
-        return result
+            masked = self._mask(logits, valid_ids)
+            next_id = int(np.argmax(masked))
+            current_ids.append(next_id)
+            built += self.id_to_str.get(next_id, "")
 
-    def _extract_parameters_from_text(self, text: str, function_name: str) -> dict:
-        params = {}
-        
-        func_def = self.schema_builder.get_function_by_name(function_name)
-        if not func_def:
-            return params
-        
-        expected_params = func_def.get("parameters", {})
-        
-        for param_name, param_info in expected_params.items():
-            param_type = param_info.get("type", "string")
-            
-            pattern = rf'["\']?{param_name}["\']?\s*:\s*([^,}}]+)'
-            match = re.search(pattern, text)
-            
-            if match:
-                value_str = match.group(1).strip()
-                value_str = value_str.strip('"\'')
-                
-                if param_type == "number":
-                    try:
-                        params[param_name] = float(value_str)
-                    except ValueError:
-                        pass
-                elif param_type == "string":
-                    params[param_name] = value_str
-                elif param_type == "boolean":
-                    params[param_name] = value_str.lower() in ("true", "yes", "1")
-        
-        return params
+        return built
 
-    def _coerce_parameters(self, parameters: dict, function_name: str) -> dict:
-        func_def = None
-        for func in self.functions_def:
-            if func["name"] == function_name:
-                func_def = func
+    def _tokens_continuing_any(self, targets: list[str], built: str) -> list[int]:
+        valid: set[int] = set()
+        for target in targets:
+            if not target.startswith(built):
+                continue
+            remaining = target[len(built):]
+            for token_id, token_str in self.id_to_str.items():
+                if token_str and remaining.startswith(token_str):
+                    valid.add(token_id)
+        return list(valid)
+
+    def _run_state_machine(
+        self, prompt_ids: list[int], sm: JSONStateMachine, max_tokens: int = 200
+    ) -> list[int]:
+        current_ids = prompt_ids.copy()
+        generated: list[int] = []
+
+        for _ in range(max_tokens):
+            valid_ids = sm.get_valid_ids()
+            if not valid_ids:
                 break
-        
-        if not func_def:
-            return parameters
 
-        coerced = {}
-        for param_name, param_type in func_def.get("parameters", {}).items():
-            if param_name in parameters:
-                value = parameters[param_name]
-                expected_type = param_type.get("type", "string")
-                
-                if expected_type == "number":
-                    if isinstance(value, (int, float)):
-                        coerced[param_name] = float(value)
-                    else:
-                        try:
-                            coerced[param_name] = float(value)
-                        except (ValueError, TypeError):
-                            coerced[param_name] = 0.0
-                elif expected_type == "string":
-                    coerced[param_name] = str(value)
-                elif expected_type == "boolean":
-                    if isinstance(value, bool):
-                        coerced[param_name] = value
-                    elif isinstance(value, str):
-                        coerced[param_name] = value.lower() in ("true", "yes", "1")
-                    else:
-                        coerced[param_name] = bool(value)
-                else:
-                    coerced[param_name] = value
-        
-        return coerced
+            logits = self.model.get_logits_from_input_ids(current_ids)
+            masked = self._mask(logits, valid_ids)
+            next_id = int(np.argmax(masked))
+
+            current_ids.append(next_id)
+            generated.append(next_id)
+            sm.update(next_id)
+
+            if sm.state == State.DONE:
+                final_ids = sm.get_valid_ids()
+                if final_ids:
+                    generated.append(final_ids[0])
+                break
+
+        return generated
+
+    def _mask(self, logits: list[float], valid_ids: list[int]) -> np.ndarray:
+        arr = np.array(logits, dtype=np.float32)
+        masked = np.full_like(arr, fill_value=-np.inf)
+        for i in valid_ids:
+            masked[i] = arr[i]
+        return masked
