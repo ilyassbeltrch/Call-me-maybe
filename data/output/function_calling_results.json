@@ -1,68 +1,100 @@
 [
   {
     "prompt": "What is the sum of 2 and 3?",
-    "name": "fn_add_numbers",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "a": 2,
-      "b": 3
+      "source_string": "2 and 3",
+      "regex": "2 and 3",
+      "replacement": "5"
     }
   },
   {
     "prompt": "What is the sum of 265 and 345?",
-    "name": "fn_add_numbers",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "a": 265,
-      "b": 345
+      "source_string": "265 and 345",
+      "regex": "265 and 345",
+      "replacement": "265 + 345"
     }
   },
   {
     "prompt": "Greet shrek",
-    "name": "fn_greet",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "name": "shrek"
+      "source_string": "Greet shrek",
+      "regex": "Greet shrek",
+      "replacement": "Hello, welcome to the world of"
     }
   },
   {
     "prompt": "Greet john",
-    "name": "fn_greet",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "name": "john"
+      "source_string": "john",
+      "regex": "john",
+      "replacement": "hello"
     }
   },
   {
     "prompt": "Reverse the string 'hello'",
-    "name": "fn_reverse_string",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "s": "hello"
+      "source_string": "hello",
+      "regex": "^h$|^H$|^h$|^h$|^h$|^h$|^h$|^h",
+      "replacement": "world"
     }
   },
   {
     "prompt": "Reverse the string 'world'",
-    "name": "fn_reverse_string",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "s": "world"
+      "source_string": "world",
+      "regex": "world",
+      "replacement": "world"
     }
   },
   {
     "prompt": "What is the square root of 16?",
-    "name": "fn_get_square_root",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "a": 16
+      "source_string": "16",
+      "regex": "16",
+      "replacement": "4"
     }
   },
   {
     "prompt": "Calculate the square root of 144",
-    "name": "fn_get_square_root",
+    "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "a": 144
+      "source_string": "144",
+      "regex": "144",
+      "replacement": "12"
+    }
+  },
+  {
+    "prompt": "Replace all numbers in \"Hello 34 I'm 233 years old\" with NUMBERS",
+    "name": "fn_substitute_string_with_regex",
+    "parameters": {
+      "source_string": "Hello 34 I'm 233 years old",
+      "regex": "([0-9]+) + ([0-9]+) + ([0-9]+)",
+      "replacement": "NUMBERS"
+    }
+  },
+  {
+    "prompt": "Replace all vowels in 'Programming is fun' with asterisks",
+    "name": "fn_substitute_string_with_regex",
+    "parameters": {
+      "source_string": "Programming is fun",
+      "regex": "[aeiouAEIOU]$, replacement:***",
+      "replacement": "***"
     }
   },
   {
     "prompt": "Substitute the word 'cat' with 'dog' in 'The cat sat on the mat with another cat'",
     "name": "fn_substitute_string_with_regex",
     "parameters": {
-      "source_string": "The cat sat on the mat with another cat",
-      "regex": "cat.*cat",
+      "source_string": "The cat sat on the mat with another",
+      "regex": "cat.*cat.*",
       "replacement": "dog"
     }
   }
