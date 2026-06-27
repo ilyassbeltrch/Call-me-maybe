@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Dict, Union
+from typing import Dict
 
 
 class Parameter(BaseModel):

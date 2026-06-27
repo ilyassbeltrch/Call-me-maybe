@@ -24,7 +24,7 @@ class State(Enum):
     DONE = auto()
 
 
-MAX_STRING_LEN = 30
+MAX_STRING_LEN = 200
 
 
 class JSONStateMachine:
@@ -51,21 +51,24 @@ class JSONStateMachine:
 
         self._number_tokens_no_dot: list[int] = []
         self._number_tokens_with_dot: list[int] = []
+        self._dot_token: list[int] = []
         self._string_tokens: list[int] = []
-
-        blocked_chars = '"{}\\'
 
         for tid, s in id_to_str.items():
             if not s:
                 continue
+            # number tokens: digits and dot only
             if all(c in "0123456789." for c in s):
                 self._number_tokens_no_dot.append(tid)
                 if "." not in s:
                     self._number_tokens_with_dot.append(tid)
 
-            has_control_char = any(ord(c) < 0x20 for c in s)
-            has_blocked_char = any(c in blocked_chars for c in s)
-            if not has_control_char and not has_blocked_char:
+            # string tokens: block control chars, backslash, and quote only
+            # allow { } so paths/templates work
+            has_control = any(ord(c) < 0x20 for c in s)
+            has_quote = '"' in s
+            has_backslash = '\\' in s
+            if not has_control and not has_quote and not has_backslash:
                 self._string_tokens.append(tid)
 
     def _force(self, s: str) -> list[int]:
@@ -96,9 +99,15 @@ class JSONStateMachine:
 
         if s == State.START:
             return self._force("{")
-        if s in (State.KEY_OPEN, State.KEY_CLOSE, State.VAL_STR_OPEN,
-                 State.VAL_STR_CLOSE, State.PARAM_KEY_OPEN, State.PARAM_KEY_CLOSE,
-                 State.PARAM_VAL_STR_OPEN):
+        if s in (
+            State.KEY_OPEN,
+            State.KEY_CLOSE,
+            State.VAL_STR_OPEN,
+            State.VAL_STR_CLOSE,
+            State.PARAM_KEY_OPEN,
+            State.PARAM_KEY_CLOSE,
+            State.PARAM_VAL_STR_OPEN
+        ):
             return self._force('"')
         if s == State.KEY_NAME:
             target = "name" if "name" not in self.keys_used else "parameters"
@@ -118,10 +127,19 @@ class JSONStateMachine:
             return self._force(":")
         if s == State.PARAM_VAL_NUM:
             has_dot = "." in self.current_val_built
-            valid = self._number_tokens_with_dot if has_dot else self._number_tokens_no_dot
+            valid = (
+                self._number_tokens_with_dot
+                if has_dot
+                else self._number_tokens_no_dot
+            )
             if self._number_complete() and self.current_val_built:
+                # Force a dot if no dot yet to ensure float output
+                if "." not in self.current_val_built:
+                    valid = valid + self._force(".")
                 valid = valid + (
-                    self._force(",") if self._has_more_params() else self._force("}")
+                    self._force(",")
+                    if self._has_more_params()
+                    else self._force("}")
                 )
             return valid
         if s == State.PARAM_VAL_STR_BODY:
@@ -129,7 +147,11 @@ class JSONStateMachine:
                 return self._force('"')
             return self._string_tokens + self._force('"')
         if s == State.PARAM_NEXT:
-            return self._force(",") if self._has_more_params() else self._force("}")
+            return (
+                self._force(",")
+                if self._has_more_params()
+                else self._force("}")
+            )
         if s == State.FINAL_CLOSE:
             return self._force("}")
         return []
@@ -160,7 +182,11 @@ class JSONStateMachine:
             self.state = State.COLON
 
         elif s == State.COLON:
-            self.state = State.VAL_STR_OPEN if self.current_key == "name" else State.VAL_OBJ_OPEN
+            self.state = (
+                State.VAL_STR_OPEN
+                if self.current_key == "name"
+                else State.VAL_OBJ_OPEN
+            )
 
         elif s == State.VAL_STR_OPEN:
             self.state = State.VAL_STR_BODY
@@ -178,7 +204,11 @@ class JSONStateMachine:
             self.state = State.KEY_OPEN
 
         elif s == State.VAL_OBJ_OPEN:
-            self.state = State.PARAM_KEY_OPEN if self.param_names else State.PARAM_NEXT
+            self.state = (
+                State.PARAM_KEY_OPEN
+                if self.param_names
+                else State.PARAM_NEXT
+            )
 
         elif s == State.PARAM_KEY_OPEN:
             self.state = State.PARAM_KEY_BODY
@@ -197,7 +227,11 @@ class JSONStateMachine:
             target = self.param_names[self.current_param_idx]
             ptype = self.param_types.get(target, "string")
             self.current_val_built = ""
-            self.state = State.PARAM_VAL_NUM if ptype == "number" else State.PARAM_VAL_STR_OPEN
+            self.state = (
+                State.PARAM_VAL_NUM
+                if ptype == "number"
+                else State.PARAM_VAL_STR_OPEN
+            )
 
         elif s == State.PARAM_VAL_NUM:
             if t == ",":

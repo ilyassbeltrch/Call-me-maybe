@@ -1,6 +1,6 @@
 import json
 import sys
-from typing import List
+from typing import Any, List, cast
 from pydantic import ValidationError
 from src import parsing
 
@@ -28,10 +28,10 @@ class Loader:
                 sys.exit(f"Error: invalid prompt entry {item}: {e}")
         return prompts
 
-    def _read_json(self, path: str) -> list:
+    def _read_json(self, path: str) -> list[Any]:
         try:
             with open(path, "r") as f:
-                return json.load(f)
+                return cast(list[Any], json.load(f))
         except FileNotFoundError:
             sys.exit(f"Error: file not found: {path}")
         except json.JSONDecodeError as e:
