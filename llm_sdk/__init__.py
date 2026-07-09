@@ -99,6 +99,46 @@ class Small_LLM_Model:
         return [float(x) for x in logits]
 
 
+    def get_logits_for_input_ids(self, input_ids: list[int]):
+        """
+        Given a list of input token ids, return the raw logits tensor for every position
+        in the sequence (batch size 1). Returns a 2-D list (seq_len x vocab_size) of floats.
+        This avoids repeated forward passes when scoring multiple target tokens appended
+        to the same prompt.
+        """
+        input_tensor = torch.tensor([input_ids], device=self._device, dtype=torch.long)
+        with torch.no_grad():
+            out = self._model(input_ids=input_tensor)
+
+        # out.logits shape: (1, seq_len, vocab_size)
+        logits = out.logits[0].tolist()
+        # Convert to plain Python floats (list of lists)
+        return [[float(x) for x in row] for row in logits]
+
+    def get_next_logits(self, input_ids: list[int], past_key_values=None):
+        """
+        Incremental decoding helper.
+
+        - If `past_key_values` is None, `input_ids` is treated as the full prefix and
+          the returned logits correspond to the model's prediction for the token
+          immediately following that prefix. `past_key_values` returned should be
+          reused for subsequent incremental calls.
+        - If `past_key_values` is provided, `input_ids` should contain only the
+          most recent token(s) and the model will use the cached keys/values to
+          compute next-token logits cheaply.
+
+        Returns `(logits, past_key_values)` where `logits` is a Python list of
+        floats for the next-token logits, and `past_key_values` is the model's
+        cached tensor structure (kept on the model device).
+        """
+        input_tensor = torch.tensor([input_ids], device=self._device, dtype=torch.long)
+        with torch.no_grad():
+            out = self._model(input_ids=input_tensor, past_key_values=past_key_values, use_cache=True)
+
+        logits = out.logits[0, -1].tolist()
+        return [float(x) for x in logits], out.past_key_values
+
+
     def get_path_to_vocab_file(self) -> str:
         vocab_file_name = self._tokenizer.vocab_files_names.get('vocab_file', "vocab.json")
         vocab_path = hf_hub_download(
